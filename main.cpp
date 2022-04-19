@@ -271,7 +271,7 @@ void ComputeForwardKinematics(const gmtl::Vec3d& theta0, gmtl::Vec3d& pos) {
     std::cout << "Failed to find the tool position in the max tries" << std::endl;
 }
 
-bool SetUpNovintFalcon(FalconDevice* nf_device, std::shared_ptr<FalconFirmware> ptr_falcon) {
+bool SetUpNovintFalcon(FalconDevice* nf_device, std::shared_ptr<FalconFirmware> ptr_falcon, int NF_idx) {
     unsigned int num_falcons = 0;
 
     if (!nf_device->getDeviceCount(num_falcons) || num_falcons == 0) {
@@ -282,11 +282,11 @@ bool SetUpNovintFalcon(FalconDevice* nf_device, std::shared_ptr<FalconFirmware> 
     }
 
     // For now only use 1 Falcon: index 0
-    if (!nf_device->open(0)) {
+    if (!nf_device->open(NF_idx)) {
         // Novint Falcon is currently already opened, try to close and reopen it
         try {
             nf_device->close();
-            if (nf_device->open(0)) {
+            if (nf_device->open(NF_idx)) {
                 std::cout << "Opened falcon, required closing connection first" << std::endl;
             } else {
                 std::cout << "Cannot open falcon - Error: " << nf_device->getErrorCode() << std::endl;
@@ -369,14 +369,15 @@ void threadReceiveCoordinate(const char * ip_send, unsigned short port, int sock
 int main(int argc, char *argv[]) {
     // Get and parse arguments
 
-    if (argc != 6)
+    if (argc != 7)
     {
         std::cout << "Wrong usage. Please provide the following arguments:" << std::endl
         << "- spring constant (100 is a good value)" << std::endl
         << "- dampening constant (1000 is a good value)" << std::endl
         << "- ip address of the other NF"  << std::endl
         << "- self port (port of this device)" << std::endl 
-        << "- send port (port of the other device)" << std::endl << std::endl;
+        << "- send port (port of the other device)" << std::endl
+        << "- device index (starting at 0)" << std::endl << std::endl;
         std::cout << "Example: sudo ./imitation 100 1000 192.168.0.104 2323" << std::endl;
         return 1;
     }
@@ -385,6 +386,7 @@ int main(int argc, char *argv[]) {
     const char * ip_send = argv[3];
     unsigned short port_self = std::stoi(argv[4]);
     unsigned short port_send = std::stoi(argv[5]);
+    int NF_idx = std::stoi(argv[6]);
 
 
     // Set up NF
@@ -393,7 +395,7 @@ int main(int argc, char *argv[]) {
     nf_device->setFalconFirmware<FalconFirmwareNovintSDK>();
     std::shared_ptr<FalconFirmware> ptr_falcon = nf_device->getFalconFirmware();
 
-    if (!SetUpNovintFalcon(nf_device, ptr_falcon))
+    if (!SetUpNovintFalcon(nf_device, ptr_falcon, NF_idx))
     {
         return 1;
     }    
@@ -401,7 +403,7 @@ int main(int argc, char *argv[]) {
 
     // Declaring some variables
 
-    unsigned long begin_time; // when did loop start?
+    unsigned long last_time; // when did last loop end?
     unsigned long execution_time; // how long did loop take?
     unsigned long current_coordinate_time; // when did we take the coordinate?
     unsigned long last_coordinate_time = // when did we take the coordinate last time?
@@ -412,7 +414,7 @@ int main(int argc, char *argv[]) {
     gmtl::Vec3d position = {0, 0, 0.11};
     gmtl::Vec3d last_position = {0.0, 0.0, 0.11};
     gmtl::Vec3d velocity;
-    struct timespec t {0, 920000};
+    struct timespec t {0, 9200000};
 
 
     // Set up socket
@@ -442,23 +444,23 @@ int main(int argc, char *argv[]) {
     // Thread to receive goal coordinates from other NF
     std::thread t1(threadReceiveCoordinate, ip_send, port_send, sockfd, &goal);
 
+    last_time = // initialize at start, should be fine
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     // Main loop
     while (true)
     {
-        begin_time =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        
+        nf_device->runIOLoop();
+        std::cout << execution_time << std::endl;
 
         position = {0.0, 0.0, 0.11};  // 0.11 offset to the Z-axis (default)
 
         // find delta t
         current_coordinate_time =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         delta_time = current_coordinate_time - last_coordinate_time;
         last_coordinate_time = current_coordinate_time;
 
         // Get current position
-        nf_device->runIOLoop();
         std::array<int, 3> encoderPos = ptr_falcon->getEncoderValues();
         gmtl::Vec3d encoderAngles;
         encoderAngles[0] = nf_device->getFalconKinematic()->getTheta(encoderPos[0]);
@@ -469,9 +471,10 @@ int main(int argc, char *argv[]) {
 
         // Calculate velocity
         velocity = (position - last_position);
-        velocity[0] = velocity[0] / delta_time;
-        velocity[1] = velocity[1] / delta_time;
-        velocity[2] = velocity[2] / delta_time;
+        //std::cout << "trajectory is: (" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << ")" << std::endl;
+        velocity[0] = (1000*velocity[0]) / (delta_time/1000);
+        velocity[1] = (1000*velocity[1]) / (delta_time/1000);
+        velocity[2] = (1000*velocity[2]) / (delta_time/1000);
         last_position = position;
 
         std::cout << "coordinates are: (" << position[0] << ", " << position[1] << ", " << position[2] << ")" << std::endl;
@@ -495,8 +498,9 @@ int main(int argc, char *argv[]) {
         mtx_goal.lock();
         force += gmtl::Vec3d(spring_constant*(goal[0] - position[0]), spring_constant*(goal[1] - position[1]), spring_constant*(goal[2] - position[2]));
         mtx_goal.unlock();
-
+        //std::cout << "force is: (" << force[0] << ", " << force[1] << ", " << force[2] << ")" << std::endl;
         force -= gmtl::Vec3d(dampening_constant*velocity[0], dampening_constant*velocity[1], dampening_constant*velocity[2]); // damping
+        //std::cout << "force is: (" << force[0] << ", " << force[1] << ", " << force[2] << ")" << std::endl;
 
         // Dynamics
 
@@ -535,12 +539,14 @@ int main(int argc, char *argv[]) {
         enc_vec[2] = -torque[2];
 
         nf_device->getFalconFirmware()->setForces(enc_vec);
+        nf_device->runIOLoop();
 
-        delta_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - begin_time;
-        t.tv_nsec = delta_time > 940000
+        execution_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - last_time;
+        t.tv_nsec = execution_time > 940000
                         ? 0
-                        : 940000 - delta_time;  // nanosleep(0) to yield timeslot for other processes (scheduling)
+                        : 940000 - execution_time;  // nanosleep(0) to yield timeslot for other processes (scheduling)
         nanosleep(&t, NULL);
+        last_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     }
     
 }
