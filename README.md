@@ -1,5 +1,5 @@
 # NF-imitation
-This makes 2 Novint Falcon devices imitate each other.
+This makes 2 Novint Falcon devices imitate each other. (You can add more devices technically but didn't test.)
 
 They send each other their positions, then create a spring between their current position and the position they receive from the other.
 
@@ -14,7 +14,7 @@ g++ -o imitation main.cpp -lnifalcon -lpthread
 ## Run
 If you run it with no parameters, it prints info about the correct usage.
 ```
-sudo ./imitation spring_constant damping ip_other port_self port_other nf_id
+sudo ./imitation spring_constant damping ip_other port_self port_other nf_id(starts at 0)
 ```
 
 Example (with good values):
