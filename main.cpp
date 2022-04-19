@@ -440,17 +440,19 @@ int main(int argc, char *argv[]) {
     }
     socklen_t addr_len = sizeof(sendaddr);
 
-
+    std::cout << "Starting thread to receive coordinates from other device" << std::endl;
     // Thread to receive goal coordinates from other NF
     std::thread t1(threadReceiveCoordinate, ip_send, port_send, sockfd, &goal);
 
     last_time = // initialize at start, should be fine
             std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    std::cout << "Starting main loop!" << std::endl;
     // Main loop
     while (true)
     {
         nf_device->runIOLoop();
-        std::cout << execution_time << std::endl;
+        //std::cout << execution_time << std::endl;
 
         position = {0.0, 0.0, 0.11};  // 0.11 offset to the Z-axis (default)
 
@@ -477,7 +479,7 @@ int main(int argc, char *argv[]) {
         velocity[2] = (1000*velocity[2]) / (delta_time/1000);
         last_position = position;
 
-        std::cout << "coordinates are: (" << position[0] << ", " << position[1] << ", " << position[2] << ")" << std::endl;
+        //std::cout << "coordinates are: (" << position[0] << ", " << position[1] << ", " << position[2] << ")" << std::endl;
         //std::cout << "velocity is: (" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << ")" << std::endl;
         
         // Send coordinates to other NF.
@@ -495,6 +497,7 @@ int main(int argc, char *argv[]) {
 
         ComputeInverseKinematics(nf_angles, position);
 
+        // REMOVE FORCE LOGIC BELOW TO REMOVE FORCE FEEDBACK
         mtx_goal.lock();
         force += gmtl::Vec3d(spring_constant*(goal[0] - position[0]), spring_constant*(goal[1] - position[1]), spring_constant*(goal[2] - position[2]));
         mtx_goal.unlock();
