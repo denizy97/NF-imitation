@@ -24,7 +24,7 @@
 using namespace libnifalcon;
 using namespace StamperKinematicImpl;
 
-std::mutex mtx_goal; // mutex for updating goal position
+std::mutex mtx_goal; // mutex for updating goal position. Also used for updating the spring constant.
 
 /**
  * @brief Inverse Kinematics: calculates the correct angles given the current world position of the Novint Falcon pointer
@@ -365,6 +365,23 @@ void threadReceiveCoordinate(const char * ip_send, unsigned short port, int sock
     }
 }
 
+/**
+ * @brief Get a new spring constant as input
+ * 
+ * @param springConstant 
+ */
+void threadGetNewSpringConstant(int * springConstant){
+    std::string springConstantString;
+    while (true)
+    {
+        std::cin >> springConstantString;
+        mtx_goal.lock();
+        *springConstant = std::stoi(springConstantString);
+        mtx_goal.unlock();
+        std::cout << "spring constant updated to " << springConstantString << "!" << std::endl;        
+    }
+}
+
 
 int main(int argc, char *argv[]) {
     // Get and parse arguments
@@ -443,6 +460,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Starting thread to receive coordinates from other device" << std::endl;
     // Thread to receive goal coordinates from other NF
     std::thread t1(threadReceiveCoordinate, ip_send, port_send, sockfd, &goal);
+    std::thread t2(threadGetNewSpringConstant, &spring_constant);
 
     last_time = // initialize at start, should be fine
             std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
