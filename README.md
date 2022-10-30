@@ -1,7 +1,7 @@
 # NF-imitation
 This makes 2 Novint Falcon devices imitate each other. (You can add more devices technically but didn't test.)
 
-They send each other their positions, then create a spring between their current position and the position they receive from the other.
+They send each other their positions over the internet (or a local network), then create a spring between their current position and the position they receive from the other.
 
 With high spring constants and/or high latency the system becomes unstable. Be mindful. Don't sue me if your Novint Falcon breaks. 😛
 
